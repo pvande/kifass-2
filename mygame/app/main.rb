@@ -306,7 +306,7 @@ def tick(...)
 
   if $state.scene.advancing_to
     $state.scene.alpha -= 2
-    unless $state.scene.alpha.pos?
+    unless $state.scene.alpha.positive?
       $state.mode = $state.scene.advancing_to
       $state.scene.advancing_to = nil
       Kernel.tick_count = 0
@@ -494,7 +494,7 @@ def tick_game
 
     set_track_gain(:danger, offset.fdiv(10.seconds).clamp(0, 1))
     $outputs.sprites << { **$grid.rect, h: $grid.rect.h - 16, path: "sprites/danger.png", r: 0, a: danger_level }
-    $outputs.primitives << { **$grid.rect, h: 16, w: $grid.rect.w * (1 - offset.fdiv(25.seconds)) }.solid! if offset.pos?
+    $outputs.primitives << { **$grid.rect, h: 16, w: $grid.rect.w * (1 - offset.fdiv(25.seconds)) }.solid! if offset.positive?
   end
 
   if $state.failed&.elapsed?(2.seconds)
