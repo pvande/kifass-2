@@ -134,6 +134,10 @@ def init
   # $state.score = [:cookie, :candy_bar, :pudding_cup, :soda, :cone, :popscicle, :pink_donut, :chocolate_donut]
 
   $state.scene = { alpha: 255, advancing_to: nil }
+  $state.debug = {
+    show_pathfinding: false,
+    show_visual_cones: false,
+  }
 
   $state.editor = {
     layer: 0,
@@ -152,10 +156,6 @@ end
 def init_game
   $state.failed = nil
   $state.score = []
-  $state.debug = {
-    show_pathfinding: false,
-    show_visual_cones: false,
-  }
 
   $state.hero = {
     name: "lucy",
