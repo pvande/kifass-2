@@ -81,47 +81,6 @@ def recompute_grid!
     [key, TILES[tile].merge(x: GRID_SIZE * xpos, y: GRID_SIZE * ypos, angle: rot * 90, flip_horizontally: flip)]
   end
 
-  $line_of_sight = Hash.new { |hash, p1| hash[p1] = {} }
-
-  $special = [
-    [18, -1],
-    [18, -2],
-    [18, -3],
-    [19, -1],
-    [19, -2],
-    [19, -3],
-
-    [12, 22],
-    [13, 22],
-
-    [19, 19],
-    [20, 19],
-    [21, 19],
-    [22, 19],
-    [23, 19],
-    [24, 19],
-
-    [35, 4],
-    [36, 4],
-  ]
-  $line_of_sight = ($base.keys - $mid.keys + $special).to_h { |key| [key, {}] }
-  $bg_fiber = Fiber.new do
-    $line_of_sight.keys.each_slice(10) do |from_keys|
-      from_keys.each do |from|
-        $line_of_sight.keys.each do |to|
-          points = points_between(from, to)
-          next unless points
-          $line_of_sight[from][to] = points
-          $line_of_sight[to][from] = points
-        end
-        Fiber.yield
-      end
-      from_keys.inspect
-    end
-
-    $bg_fiber = nil
-  end
-
   $stools = MOVE_LAYER.each.to_h do |key, (tile, rot, flip)|
     xpos, ypos = key
     [key, TILES[tile].merge(x: GRID_SIZE * xpos, y: GRID_SIZE * ypos, ox: GRID_SIZE * xpos, oy: GRID_SIZE * ypos, w: GRID_SIZE.mult(0.8), h: GRID_SIZE.half, angle: rot * 90, flip_horizontally: flip).tap { |x| x.merge!(id: x.object_id) }]
@@ -161,6 +120,7 @@ end
 
 def boot(...)
   eval $gtk.read_file("app/layers.rb")
+  eval $gtk.read_file("app/los.rb")
   recompute_grid!
 end
 
@@ -710,19 +670,43 @@ def editor_mode
     return
   end
 
+  recompute_grid!
+
+  special_tiles = [
+    [18, -1], [18, -2], [18, -3], [19, -1], [19, -2], [19, -3],
+    [12, 22], [13, 22],
+    [19, 19], [20, 19], [21, 19], [22, 19], [23, 19], [24, 19],
+    [35, 4], [36, 4],
+  ]
+
+  $line_of_sight = ($base.keys - $mid.keys + special_tiles).to_h { |key| [key, {}] }
+  lines_of_sight = []
+  combinations = $line_of_sight.keys.combination(2)
+  combinations.each do |from, to|
+    points = points_between(from, to) & points_between(to, from)
+    next unless points
+    lines_of_sight << "$line_of_sight[#{from.inspect}][#{to.inspect}] = $line_of_sight[#{to.inspect}][#{from.inspect}] = #{points.inspect}"
+    $line_of_sight[from][to] = $line_of_sight[to][from] = points
+  end
+
+  $gtk.write_file("app/los.rb", <<~RUBY)
+    $line_of_sight = {}
+    #{ $line_of_sight.keys.map { |key| "$line_of_sight[#{key}] = {}\n" }.join }
+    #{ lines_of_sight.join("\n") }
+  RUBY
+
   $gtk.write_file("app/layers.rb", <<~RUBY)
     BASE_LAYER = {}
-    #{BASE_LAYER.each.map { |key, tile| "BASE_LAYER[#{key}] = #{tile.inspect}\n" }.compact.join}
+    #{BASE_LAYER.each.map { |key, tile| "BASE_LAYER[#{key}] = #{tile.inspect}\n" }.join}
     MID_LAYER = {}
-    #{MID_LAYER.each.map { |key, tile| "MID_LAYER[#{key}] = #{tile.inspect}\n" }.compact.join}
+    #{MID_LAYER.each.map { |key, tile| "MID_LAYER[#{key}] = #{tile.inspect}\n" }.join}
     MOVE_LAYER = {}
-    #{MOVE_LAYER.each.map { |key, tile| "MOVE_LAYER[#{key}] = #{tile.inspect}\n" }.compact.join}
+    #{MOVE_LAYER.each.map { |key, tile| "MOVE_LAYER[#{key}] = #{tile.inspect}\n" }.join}
     LOW_DECO_LAYER = {}
-    #{LOW_DECO_LAYER.each.map { |key, tile| "LOW_DECO_LAYER[#{key}] = #{tile.inspect}\n" }.compact.join}
+    #{LOW_DECO_LAYER.each.map { |key, tile| "LOW_DECO_LAYER[#{key}] = #{tile.inspect}\n" }.join}
     HI_DECO_LAYER = {}
-    #{HI_DECO_LAYER.each.map { |key, tile| "HI_DECO_LAYER[#{key}] = #{tile.inspect}\n" }.compact.join}
+    #{HI_DECO_LAYER.each.map { |key, tile| "HI_DECO_LAYER[#{key}] = #{tile.inspect}\n" }.join}
   RUBY
-  recompute_grid!
 end
 
 def interaction_tile(actor)
@@ -1161,7 +1145,7 @@ def self.points_between(from, to)
   sx = (x2 - x1).sign
   sy = (y2 - y1).sign
 
-  points = { [x1, y1] => true }
+  points = { from => true }
 
   e = dx
 
