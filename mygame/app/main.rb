@@ -1,5 +1,5 @@
 $gtk.disable_nil_punning!
-$gtk.disable_aggressive_gc!
+# $gtk.disable_aggressive_gc!
 # GC.generational_mode = false
 
 TEXTURE_SIZE = 16
