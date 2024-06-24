@@ -437,7 +437,7 @@ def tick_game
   mx, my = $state.mommy.values_at(:x, :y).map { |x| x.idiv(GRID_SIZE) }
   dx, dy = $state.daddy.values_at(:x, :y).map { |x| x.idiv(GRID_SIZE) }
 
-  mommy_los = $line_of_sight[[mx, my]].each_key.select do |key|
+  mommy_los = ($line_of_sight[[mx, my]] || {}).each_key.select do |key|
     case $state.mommy.facing
     when :n
       (key[1] > my && key[0].subtract(mx).abs <= 2) || (key[1] - 1 > my && key[0].add(-1).subtract(mx).abs <= 4) || key[1] - 2 > my
@@ -450,7 +450,7 @@ def tick_game
     end
   end
 
-  daddy_los = $line_of_sight[[dx, dy]].each_key.select do |key|
+  daddy_los = ($line_of_sight[[dx, dy]] || {}).each_key.select do |key|
     case $state.daddy.facing
     when :n
       (key[1] > dy && key[0].subtract(dx).abs <= 2) || (key[1] - 1 > dy && key[0].add(-1).subtract(dx).abs <= 4) || key[1] - 2 > dy
@@ -1048,6 +1048,21 @@ def move_actor(actor)
 
   try_move([actor], angle.vector_x(step), angle.vector_y(step))
 
+  if $geometry.distance(actor, target).subtract(distance).abs < 0.002
+    alternates = case actor.facing
+    when :n then [:e, :w, :s]
+    when :w then [:n, :s, :e]
+    when :s then [:w, :e, :n]
+    when :e then [:s, :n, :w]
+    end
+
+    tiles = alternates.map { |facing| tile_at(actor.x, actor.y, facing) }
+    tile = tiles.find { |x| $base[x] && !$mid[x] }
+    actor.path.unshift(tile.then { |x, y| { x: x * GRID_SIZE, y: y * GRID_SIZE } }) if tile
+  end
+
+  actor.last_angle = angle
+
   return false
 end
 
@@ -1088,7 +1103,7 @@ def recompute_path(actor)
 
       step = 1
       parent = node
-      points_crossed = node.parent && $line_of_sight[node.parent.pos][neighbor]
+      points_crossed = node.parent && $line_of_sight.dig(node.parent.pos, neighbor)
       if points_crossed && ((colliders | stools) & points_crossed).none? && !colliders.include?(from)
         parent = node.parent
         step = $geometry.distance(parent.pos, neighbor)
