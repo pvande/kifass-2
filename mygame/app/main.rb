@@ -233,11 +233,11 @@ def init_game
 
   $state.music = {
     playbacks: [:one, :two],
-    failed: { input: "sounds/failed.mp3", gain: 0.2, maximum: 0.2 },
-    bass: { input: "sounds/bass.mp3", gain: 1.0, maximum: 1.0 },
-    drums: { input: "sounds/drums.mp3", gain: 0.01, maximum: 0.5 },
-    bells: { input: "sounds/bells.mp3", gain: 0.01, maximum: 0.4 },
-    danger: { input: "sounds/danger.mp3", gain: 0.0, maximum: 0.2 },
+    failed: { input: "sounds/failed.mp3", playtime: 0.0, gain: 0.2, maximum: 0.2 },
+    bass: { input: "sounds/bass.mp3", playtime: 0.0, gain: 1.0, maximum: 1.0 },
+    drums: { input: "sounds/drums.mp3", playtime: 0.0, gain: 0.01, maximum: 0.5 },
+    bells: { input: "sounds/bells.mp3", playtime: 0.0, gain: 0.01, maximum: 0.4 },
+    danger: { input: "sounds/danger.mp3", playtime: 0.0, gain: 0.0, maximum: 0.2 },
   }
 
   $audio[:bass_one] = $state.music.bass.dup
@@ -254,12 +254,15 @@ def init_game
 end
 
 def loop_bg_music
+  playtime = $audio[:"bass_#{$state.music.playbacks.first}"].playtime - 10.875
+  return if playtime < 0
+
   $state.music.playbacks.rotate!
   playback = $state.music.playbacks.first
-  $audio[:"bass_#{playback}"] = $state.music.bass.dup
-  $audio[:"drums_#{playback}"] = $state.music.drums.dup
-  $audio[:"bells_#{playback}"] = $state.music.bells.dup
-  $audio[:"danger_#{playback}"] = $state.music.danger.dup unless $state.failed
+  $audio[:"bass_#{playback}"] = $state.music.bass.merge(playtime: playtime)
+  $audio[:"drums_#{playback}"] = $state.music.drums.merge(playtime: playtime)
+  $audio[:"bells_#{playback}"] = $state.music.bells.merge(playtime: playtime)
+  $audio[:"danger_#{playback}"] = $state.music.danger.merge(playtime: playtime) unless $state.failed
 end
 
 def set_track_gain(track, gain)
@@ -382,7 +385,7 @@ end
 
 def tick_game
   init_game if Kernel.tick_count.zero?
-  loop_bg_music if Kernel.tick_count > 0 && Kernel.tick_count.zmod?(655)
+  loop_bg_music
 
   $state.music.each do |name, track|
     next if name == :playbacks
