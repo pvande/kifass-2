@@ -3,7 +3,7 @@ devid=pvande
 devtitle=pvande
 gameid=kid-in-a-kitchen
 gametitle=Kid in a Kitchen
-version=1.0
+version=1.1
 icon=metadata/icon.png
 
 # === Flags available at all licensing tiers ===
