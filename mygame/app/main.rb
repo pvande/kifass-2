@@ -76,9 +76,12 @@ def recompute_grid!
     [key, TILES[tile].merge(x: GRID_SIZE * xpos, y: GRID_SIZE * ypos, angle: rot * 90, flip_horizontally: flip)]
   end
 
-  $mid = MID_LAYER.each.to_h do |key, (tile, rot, flip)|
+  $walls = {}
+  $mid = {}
+  MID_LAYER.each do |key, (tile, rot, flip)|
     xpos, ypos = key
-    [key, TILES[tile].merge(x: GRID_SIZE * xpos, y: GRID_SIZE * ypos, angle: rot * 90, flip_horizontally: flip)]
+    ($walls[xpos] ||= {})[ypos] = true
+    $mid[key] = TILES[tile].merge(x: GRID_SIZE * xpos, y: GRID_SIZE * ypos, angle: rot * 90, flip_horizontally: flip)
   end
 
   $stools = MOVE_LAYER.each.to_h do |key, (tile, rot, flip)|
@@ -799,7 +802,7 @@ def update_hero
 
   hero_sprite = HERO[action][$actor.facing]
   hero_sprite = hero_sprite[($state.failed || $state.tick_count).idiv(10) % hero_sprite.length] if hero_sprite.is_a?(Array)
-  $actor.merge(hero_sprite)
+  return $actor.merge(hero_sprite)
 end
 
 def hero_on_floor
@@ -1069,6 +1072,7 @@ def move_actor(actor)
   return false
 end
 
+$NEIGHBORS = [[1, 0], [0, 1], [0, -1], [-1, 0]]
 def recompute_path(actor)
   new_path = actor.path.empty?
   from =
@@ -1084,47 +1088,67 @@ def recompute_path(actor)
 
   unless actor.pathfinding
     node = { pos: from, cost: [0, 0], parent: nil }
-    actor.pathfinding = { open: { from => node }, closed: [from] }
+    actor.pathfinding = { available: [node], eliminated: Hash.new { |h,k| h[k] = {} } }
+    actor.pathfinding.eliminated[from[0]][from[1]] = true
   end
 
-  open, closed = actor.pathfinding.values_at(:open, :closed)
-  colliders = ($colliders - [actor]).map { |obj| obj.values_at(:x, :y).map! { |x| x.idiv(GRID_SIZE) } }
-  stools = $stools.values.map { |obj| obj.values_at(:x, :y).map! { |x| x.idiv(GRID_SIZE) } }
+  available, eliminated = actor.pathfinding.values_at(:available, :eliminated)
+
+  colliders_and_stools = Hash.new { |h,k| h[k] = {} }
+  elevations = Hash.new { |h,k| h[k] = Hash.new(0) }
+
+  $colliders.take(2).each do |obj|
+    x, y = obj.x.idiv(GRID_SIZE), obj.y.idiv(GRID_SIZE)
+    colliders_and_stools[x][y] = true
+    elevations[x][y] += 500
+  end
+
+  $stools.values.each do |obj|
+    x, y = obj.x.idiv(GRID_SIZE), obj.y.idiv(GRID_SIZE)
+    colliders_and_stools[x][y] = true
+    elevations[x][y] += 200
+  end
 
   result = nil
-  25.times do
-    node = open.values.min { |a, b| a.cost <=> b.cost }
-    open.delete(node.pos)
-    closed.push node.pos
-
+  25.times do |i|
+    available.sort! { |a, b| a.cost <=> b.cost }
+    node = available.shift
     break result = node if node.pos == to
 
-    [[1, 0], [0, 1], [0, -1], [-1, 0]].each do |(dx, dy)|
-      neighbor = [ node.pos[0] + dx, node.pos[1] + dy ]
-      next if $mid.include?(neighbor)
-      next if closed.include?(neighbor)
+    eliminated[node.pos[0]][node.pos[1]] = true
+
+    $NEIGHBORS.each do |(dx, dy)|
+      nx = node.pos[0] + dx
+      ny = node.pos[1] + dy
+      next if $walls[nx][ny]
+      next if eliminated[nx][ny]
 
       step = 1
       parent = node
+      neighbor = [nx, ny]
       points_crossed = node.parent && $line_of_sight.dig(node.parent.pos, neighbor)
-      if points_crossed && ((colliders | stools) & points_crossed).none? && !colliders.include?(from)
+      if points_crossed && points_crossed.none? { |x, y| colliders_and_stools[x][y] }
+        delta_x = parent.pos[0] - neighbor[0]
+        delta_y = parent.pos[1] - neighbor[1]
+        step = delta_x ** 2 + delta_y ** 2
         parent = node.parent
-        step = $geometry.distance(parent.pos, neighbor)
       else
         points_crossed = [parent.pos, neighbor]
       end
 
-      step += 50 if (colliders & points_crossed).any?
-      step += 20 if (stools & points_crossed).any?
+      step += points_crossed.sum { |x, y| elevations[x][y] }
 
-      estimate = $geometry.distance(neighbor, to)
+      delta_x = neighbor[0] - to[0]
+      delta_y = neighbor[1] - to[1]
+      estimate = delta_x ** 2 + delta_y ** 2
+
       cost = [parent.cost.last + step + estimate, estimate, parent.cost.last + step]
-      if (existing = open[neighbor])
+      if (existing = available.find { |x| x.pos == neighbor })
         next unless (cost <=> existing.cost).neg?
         existing.cost = cost
         existing.parent = parent
       else
-        open[neighbor] = { pos: neighbor, cost: cost, parent: parent }
+        available.unshift({ pos: neighbor, cost: cost, parent: parent })
       end
     end
   end
@@ -1226,10 +1250,12 @@ def debug_pathfinding
     end
 
     if actor.pathfinding
-      $outputs.primitives << actor.pathfinding[:open].values.map { |node| { x: node.pos[0] * GRID_SIZE, y: node.pos[1] * GRID_SIZE, w: GRID_SIZE, h: GRID_SIZE }.to_solid(g: 255, a: 200) }
-      $outputs.primitives << actor.pathfinding[:closed].map { |rect| { x: rect[0] * GRID_SIZE, y: rect[1] * GRID_SIZE, w: GRID_SIZE, h: GRID_SIZE }.to_solid(r: 200, a: 100) }
+      $outputs.primitives << actor.pathfinding[:available].map { |node| { x: node.pos[0] * GRID_SIZE, y: node.pos[1] * GRID_SIZE, w: GRID_SIZE, h: GRID_SIZE }.to_solid(g: 255, a: 200) }
+      $outputs.primitives << actor.pathfinding[:eliminated].flat_map do |x, hash|
+        hash.keys.map { |y| { x: x * GRID_SIZE, y: y * GRID_SIZE, w: GRID_SIZE, h: GRID_SIZE }.to_solid(r: 200, a: 100) }
+      end
 
-      edges = actor.pathfinding[:open].values
+      edges = actor.pathfinding[:available].dup
       until edges.empty?
         node = edges.shift
         next unless node.parent
@@ -1243,7 +1269,7 @@ def debug_pathfinding
         }.to_line(b: 255)
       end
 
-      $outputs.primitives << actor.pathfinding[:open].values.map do |node|
+      $outputs.primitives << actor.pathfinding[:available].map do |node|
         props = $geometry.rect_props({ x: node.pos[0] * GRID_SIZE, y: node.pos[1] * GRID_SIZE, w: GRID_SIZE, h: GRID_SIZE })
         [
           props.to_label(text: "f: " + node.cost[0].to_sf, size_enum: -7.5, anchor_y: -3.5).then { |x| [ x.shift_rect(0.5, -1).merge(r: 255, g: 255, b:255), x ]},
