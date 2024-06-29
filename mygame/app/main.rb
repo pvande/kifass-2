@@ -305,8 +305,8 @@ def tick(...)
   $outputs.background_color = [0, 0, 0]
   $outputs.transient!
 
-  $state.mode = ($state.mode == :editor ? :game : :editor) if $inputs.keyboard.ctrl_e
-  $state.debug.show_pathfinding ^= true if $inputs.keyboard.key_down.p
+  # $state.mode = ($state.mode == :editor ? :game : :editor) if $inputs.keyboard.ctrl_e
+  # $state.debug.show_pathfinding ^= true if $inputs.keyboard.key_down.p
 
   # time = Time.now
 
